@@ -62,7 +62,15 @@ class MigrationService:
                 # Create batches if they don't exist
                 if not job.batches:
 
+
                     total_records = self._get_total_record_count(oracle_service, oracle_query)
+                    total_records = self._get_total_record_count(oracle_service, mapping_config.oracle_query)
+
+
+
+
+
+
                     job.total_records = total_records
                     db.session.commit()
 
@@ -96,12 +104,28 @@ class MigrationService:
                         logger.info(f"Migration job {job_id} stopped by user")
                         return
 
+                    try:
+                        batch_data = self._fetch_batch_data(
+                            oracle_service,
+                            mapping_config.oracle_query,
+                            batch.offset,
+                            batch.limit,
+                        )
+                    except Exception as e:
+                        batch.status = 'failed'
+                        batch.error_message = str(e)
+                        failed += batch.limit
+                        db.session.commit()
+                        continue
+
+                    transformed_data = self._transform_batch(batch_data, mapping_config)
 
 
                     try:
                         batch_data = self._fetch_batch_data(
                             oracle_service,
                             oracle_query,
+
                             batch.offset,
                             batch.limit,
                         )
