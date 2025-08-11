@@ -44,3 +44,4 @@ def mapping_interface():
 def migration_status():
     """Migration status and job monitoring interface"""
     return render_template('migration_status.html')
+

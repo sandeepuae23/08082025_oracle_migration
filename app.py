@@ -3,6 +3,7 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import inspect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configure logging
@@ -45,3 +46,26 @@ with app.app_context():
     # Import models to ensure tables are created
     import models
     db.create_all()
+
+    # Ensure is_incremental column exists for existing databases
+    inspector = inspect(db.engine)
+    cols = [c['name'] for c in inspector.get_columns('migration_jobs')]
+    if 'is_incremental' not in cols:
+        with db.engine.begin() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE migration_jobs ADD COLUMN is_incremental BOOLEAN DEFAULT 0'
+            )
+
+    # Ensure incremental sync columns exist on mapping_configurations
+    cols = [c['name'] for c in inspector.get_columns('mapping_configurations')]
+    if 'incremental_column' not in cols:
+        with db.engine.begin() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE mapping_configurations ADD COLUMN incremental_column VARCHAR(100)'
+            )
+    if 'last_sync_time' not in cols:
+        with db.engine.begin() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE mapping_configurations ADD COLUMN last_sync_time DATETIME'
+            )
+

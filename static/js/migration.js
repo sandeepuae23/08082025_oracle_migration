@@ -213,8 +213,9 @@ async function showJobDetails(jobId) {
     try {
         const response = await axios.get(`/api/migration/jobs/${jobId}`);
         const job = response.data;
-        
+
         renderJobDetails(job);
+        loadBatchDetails(jobId);
         
         // Show/hide action buttons based on status
         const stopBtn = document.getElementById('stopJobBtn');
@@ -274,7 +275,7 @@ function renderJobDetails(job) {
             </div>
         </div>
     `;
-    
+
     if (job.error_message) {
         html += `
             <div class="row mt-3">
@@ -287,7 +288,58 @@ function renderJobDetails(job) {
             </div>
         `;
     }
-    
+
+    html += `
+        <div class="row mt-3">
+            <div class="col-12">
+                <h6>Batch Details</h6>
+                <div id="batch-details">
+                    <div class="text-center text-muted"><i class='fas fa-spinner fa-spin me-2'></i>Loading batches...</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+// Load and render batch details
+async function loadBatchDetails(jobId) {
+    try {
+        const response = await axios.get(`/api/migration/jobs/${jobId}/batches`);
+        renderBatchDetails(response.data);
+    } catch (error) {
+        console.error('Error loading batch details:', error);
+        const container = document.getElementById('batch-details');
+        if (container) {
+            container.innerHTML = '<div class="text-danger">Error loading batch details</div>';
+        }
+    }
+}
+
+function renderBatchDetails(batches) {
+    const container = document.getElementById('batch-details');
+    if (!container) return;
+
+    if (batches.length === 0) {
+        container.innerHTML = '<div class="text-muted">No batches found</div>';
+        return;
+    }
+
+    let html = '<div class="table-responsive">';
+    html += '<table class="table table-sm">';
+    html += '<thead><tr><th>ID</th><th>Offset</th><th>Limit</th><th>Status</th><th>Processed</th><th>Error</th></tr></thead><tbody>';
+    batches.forEach(batch => {
+        html += `<tr>
+            <td>${batch.id}</td>
+            <td>${batch.offset}</td>
+            <td>${batch.limit}</td>
+            <td>${batch.status}</td>
+            <td>${batch.processed_records}</td>
+            <td>${batch.error_message ? batch.error_message : '-'}</td>
+        </tr>`;
+    });
+    html += '</tbody></table></div>';
     container.innerHTML = html;
 }
 
@@ -375,19 +427,28 @@ async function stopAllJobs() {
     }
 }
 
-// Clear completed jobs (this would need backend implementation)
+// Clear completed jobs
 function clearCompletedJobs() {
     const completedJobs = migrationJobs.filter(job => job.status === 'completed');
-    
+
     if (completedJobs.length === 0) {
         alert('No completed jobs to clear');
         return;
     }
-    
-    if (confirm(`Are you sure you want to clear ${completedJobs.length} completed jobs from the list?`)) {
-        // This would require backend implementation
-        alert('Feature not yet implemented');
+
+    if (!confirm(`Are you sure you want to clear ${completedJobs.length} completed jobs from the list?`)) {
+        return;
     }
+
+    axios.delete('/api/migration/jobs/completed')
+        .then(() => {
+            loadJobs();
+            showNotification(`${completedJobs.length} completed job(s) cleared`, 'success');
+        })
+        .catch(error => {
+            console.error('Error clearing completed jobs:', error);
+            alert('Error clearing completed jobs');
+        });
 }
 
 // Show start job modal
