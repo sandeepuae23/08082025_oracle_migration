@@ -81,7 +81,11 @@ class MigrationJob(db.Model):
     end_time = db.Column(db.DateTime)
     error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    is_incremental = db.Column(db.Boolean, default=False)
+
     is_incremental = db.Column(db.Boolean, default=False)  # Indicates incremental run
+
     
     # Relationships
     mapping_configuration = db.relationship('MappingConfiguration', backref='migration_jobs')
