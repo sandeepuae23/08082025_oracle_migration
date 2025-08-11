@@ -12,6 +12,7 @@ def get_jobs():
     """Get all migration jobs"""
     try:
         jobs = MigrationJob.query.order_by(MigrationJob.created_at.desc()).all()
+
         return jsonify([
             {
                 'id': job.id,
@@ -29,6 +30,26 @@ def get_jobs():
             }
             for job in jobs
         ])
+
+        return jsonify([{
+            'id': job.id,
+            'mapping_configuration_name': job.mapping_configuration.name,
+            'status': job.status,
+            'total_records': job.total_records,
+            'processed_records': job.processed_records,
+            'failed_records': job.failed_records,
+            'progress_percentage': job.progress_percentage,
+            'start_time': job.start_time.isoformat() if job.start_time else None,
+            'end_time': job.end_time.isoformat() if job.end_time else None,
+            'error_message': job.error_message,
+
+            'created_at': job.created_at.isoformat(),
+            'is_incremental': job.is_incremental
+
+        } for job in jobs])
+
+
+
     except Exception as e:
         logger.error(f"Error fetching migration jobs: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -39,14 +60,32 @@ def create_job():
     try:
         data = request.json
         mapping_config_id = data['mapping_configuration_id']
+
         mapping_config = MappingConfiguration.query.get_or_404(mapping_config_id)
         is_incremental = data.get('is_incremental', bool(mapping_config.incremental_column))
+
+
+
+        mapping_config = MappingConfiguration.query.get_or_404(mapping_config_id)
+        is_incremental = data.get('is_incremental', bool(mapping_config.incremental_column))
+
+
+
+        mapping_config = MappingConfiguration.query.get_or_404(mapping_config_id)
+        is_incremental = data.get('is_incremental', bool(mapping_config.incremental_column))
+        is_incremental = data.get('is_incremental', False)
+
+        mapping_config = MappingConfiguration.query.get_or_404(mapping_config_id)
+
 
         # Create new migration job
         job = MigrationJob(
             mapping_configuration_id=mapping_config_id,
             status='pending',
-            is_incremental=is_incremental,
+            is_incremental=is_incremental
+
+
+
         )
         db.session.add(job)
         db.session.commit()
@@ -80,6 +119,16 @@ def get_job(job_id):
             'error_message': job.error_message,
             'created_at': job.created_at.isoformat(),
             'is_incremental': job.is_incremental,
+
+
+            'created_at': job.created_at.isoformat(),
+            'is_incremental': job.is_incremental
+
+
+
+
+
+
         })
     except Exception as e:
         logger.error(f"Error fetching migration job: {str(e)}")
