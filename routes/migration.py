@@ -23,8 +23,13 @@ def get_jobs():
             'start_time': job.start_time.isoformat() if job.start_time else None,
             'end_time': job.end_time.isoformat() if job.end_time else None,
             'error_message': job.error_message,
+
             'created_at': job.created_at.isoformat(),
             'is_incremental': job.is_incremental
+
+            'is_incremental': job.is_incremental,
+            'created_at': job.created_at.isoformat()
+
         } for job in jobs])
     except Exception as e:
         logger.error(f"Error fetching migration jobs: {str(e)}")
@@ -44,7 +49,11 @@ def create_job():
         job = MigrationJob(
             mapping_configuration_id=mapping_config_id,
             status='pending',
+
             is_incremental=is_incremental
+
+            is_incremental=data.get('incremental', bool(mapping_config.incremental_column))
+
         )
         db.session.add(job)
         db.session.commit()
@@ -76,8 +85,13 @@ def get_job(job_id):
             'start_time': job.start_time.isoformat() if job.start_time else None,
             'end_time': job.end_time.isoformat() if job.end_time else None,
             'error_message': job.error_message,
+
             'created_at': job.created_at.isoformat(),
             'is_incremental': job.is_incremental
+
+            'is_incremental': job.is_incremental,
+            'created_at': job.created_at.isoformat()
+
         })
     except Exception as e:
         logger.error(f"Error fetching migration job: {str(e)}")
@@ -135,6 +149,24 @@ def retry_job(job_id):
         logger.error(f"Error retrying migration job: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+
+
+@migration_bp.route('/jobs/completed', methods=['DELETE'])
+def clear_completed_jobs():
+    """Delete all completed migration jobs"""
+    try:
+        completed_jobs = MigrationJob.query.filter_by(status='completed').all()
+        count = len(completed_jobs)
+        for job in completed_jobs:
+            db.session.delete(job)
+        db.session.commit()
+        return jsonify({'deleted': count})
+    except Exception as e:
+        logger.error(f"Error clearing completed jobs: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 
 
 @migration_bp.route('/jobs/<int:job_id>/batches', methods=['GET'])
