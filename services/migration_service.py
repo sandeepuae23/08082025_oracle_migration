@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from models import MigrationJob, MappingConfiguration, MigrationBatch
 from services.oracle_service import OracleService
@@ -14,6 +15,7 @@ class MigrationService:
         self.app = app
         self.running_jobs = {}
         self.stop_flags = {}
+        self.scheduled_jobs = {}
     
     def start_migration(self, job_id):
         """Start migration job in background thread"""
@@ -42,9 +44,12 @@ class MigrationService:
                 if not job:
                     logger.error(f"Migration job {job_id} not found")
                     return
-                
+
                 mapping_config = job.mapping_configuration
-                
+                oracle_query = mapping_config.oracle_query
+                if job.is_incremental:
+                    oracle_query = self._apply_incremental_filter(oracle_query, mapping_config)
+
                 # Update job status
                 job.status = 'running'
                 job.start_time = datetime.utcnow()
@@ -52,13 +57,12 @@ class MigrationService:
                 
                 logger.info(f"Starting migration job {job_id}")
                 
-                # Initialize services
+                # Initialize service for record counting
                 oracle_service = OracleService(mapping_config.oracle_connection)
-                es_service = ElasticsearchService(mapping_config.elasticsearch_connection)
 
                 # Create batches if they don't exist
                 if not job.batches:
-                    total_records = self._get_total_record_count(oracle_service, mapping_config.oracle_query)
+                    total_records = self._get_total_record_count(oracle_service, oracle_query)
                     job.total_records = total_records
                     db.session.commit()
 
@@ -83,63 +87,31 @@ class MigrationService:
                     MigrationBatch.status != 'completed'
                 ).order_by(MigrationBatch.offset).all()
 
-                for batch in batches:
-                    # Check stop flag
-                    if self.stop_flags.get(job_id, False):
-                        job.status = 'stopped'
-                        job.end_time = datetime.utcnow()
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    future_map = {}
+                    for batch in batches:
+                        if self.stop_flags.get(job_id, False):
+                            break
+                        future = executor.submit(
+                            self._process_batch,
+                            mapping_config,
+                            oracle_query,
+                            batch.id,
+                            job.id,
+                        )
+                        future_map[future] = batch.id
+
+                    for future in as_completed(future_map):
+                        if self.stop_flags.get(job_id, False):
+                            executor.shutdown(cancel_futures=True)
+                            break
+                        result = future.result()
+                        processed += result['processed']
+                        failed += result['failed']
+                        job.processed_records = processed
+                        job.failed_records = failed
                         db.session.commit()
-                        logger.info(f"Migration job {job_id} stopped by user")
-                        return
-
-                    try:
-                        batch_data = self._fetch_batch_data(
-                            oracle_service,
-                            mapping_config.oracle_query,
-                            batch.offset,
-                            batch.limit,
-                        )
-                    except Exception as e:
-                        batch.status = 'failed'
-                        batch.error_message = str(e)
-                        failed += batch.limit
-                        db.session.commit()
-                        continue
-
-                    transformed_data = self._transform_batch(batch_data, mapping_config)
-
-                    try:
-                        result = es_service.bulk_index(
-                            mapping_config.elasticsearch_index, transformed_data
-                        )
-                        batch.processed_records = result['success_count']
-                        processed += result['success_count']
-                        failed += result['failed_count']
-
-                        if result['failed_count'] > 0:
-                            batch.status = 'failed'
-                            batch.error_message = str(result['errors'])
-                            logger.warning(
-                                f"Batch errors in job {job_id}: {result['errors']}"
-                            )
-                        else:
-                            batch.status = 'completed'
-
-                    except Exception as e:
-                        logger.error(
-                            f"Error indexing batch offset {batch.offset} in job {job_id}: {str(e)}"
-                        )
-                        batch.status = 'failed'
-                        batch.error_message = str(e)
-                        failed += len(transformed_data)
-
-                    # Update progress
-                    job.processed_records = processed
-                    job.failed_records = failed
-                    db.session.commit()
-
-                    # Small delay to prevent overwhelming the systems
-                    time.sleep(0.1)
+                        time.sleep(0.1)
 
                 # Determine final job status
                 failed_batches = MigrationBatch.query.filter_by(
@@ -153,6 +125,9 @@ class MigrationService:
                     )
                 else:
                     job.status = 'completed'
+                    if job.is_incremental:
+                        mapping_config.last_sync_time = datetime.utcnow()
+                        db.session.commit()
 
                 job.end_time = datetime.utcnow()
                 db.session.commit()
@@ -160,7 +135,7 @@ class MigrationService:
                 logger.info(
                     f"Migration job {job_id} completed. Processed: {processed}, Failed: {failed}"
                 )
-                
+
         except Exception as e:
             logger.error(f"Migration job {job_id} failed: {str(e)}")
             with self.app.app_context():
@@ -177,7 +152,66 @@ class MigrationService:
                 del self.running_jobs[job_id]
             if job_id in self.stop_flags:
                 del self.stop_flags[job_id]
-    
+
+    def _process_batch(self, mapping_config, oracle_query, batch_id, job_id):
+        """Process a single batch of data"""
+        with self.app.app_context():
+            batch = MigrationBatch.query.get(batch_id)
+            oracle_service = OracleService(mapping_config.oracle_connection)
+            es_service = ElasticsearchService(mapping_config.elasticsearch_connection)
+            try:
+                batch_data = self._fetch_batch_data(
+                    oracle_service,
+                    oracle_query,
+                    batch.offset,
+                    batch.limit,
+                )
+            except Exception as e:
+                batch.status = 'failed'
+                batch.error_message = str(e)
+                db.session.commit()
+                return {'processed': 0, 'failed': batch.limit}
+
+            transformed_data = self._transform_batch(batch_data, mapping_config)
+
+            try:
+                result = es_service.bulk_index(
+                    mapping_config.elasticsearch_index, transformed_data
+                )
+                batch.processed_records = result['success_count']
+                if result['failed_count'] > 0:
+                    batch.status = 'failed'
+                    batch.error_message = str(result['errors'])
+                else:
+                    batch.status = 'completed'
+                db.session.commit()
+                return {
+                    'processed': result['success_count'],
+                    'failed': result['failed_count']
+                }
+            except Exception as e:
+                logger.error(
+                    f"Error indexing batch offset {batch.offset} in job {job_id}: {str(e)}"
+                )
+                batch.status = 'failed'
+                batch.error_message = str(e)
+                db.session.commit()
+                return {'processed': 0, 'failed': len(transformed_data)}
+
+    def _apply_incremental_filter(self, query, mapping_config):
+        """Apply incremental sync filter to query if configured"""
+        if not mapping_config.incremental_column or not mapping_config.last_sync_time:
+            return query
+
+        timestamp = mapping_config.last_sync_time.strftime("%Y-%m-%d %H:%M:%S")
+        condition = (
+            f"{mapping_config.incremental_column} > "
+            f"TO_TIMESTAMP('{timestamp}', 'YYYY-MM-DD HH24:MI:SS')"
+        )
+        if 'where' in query.lower():
+            return f"{query} AND {condition}"
+        return f"{query} WHERE {condition}"
+
     def _get_total_record_count(self, oracle_service, query):
         """Get total number of records that will be migrated"""
         try:
@@ -276,9 +310,14 @@ class MigrationService:
         try:
             # Initialize services
             oracle_service = OracleService(mapping_config.oracle_connection)
-            
+
+            # Apply incremental filter if needed
+            query = mapping_config.oracle_query
+            if mapping_config.incremental_column and mapping_config.last_sync_time:
+                query = self._apply_incremental_filter(query, mapping_config)
+
             # Get sample data
-            sample_data = oracle_service.execute_query(mapping_config.oracle_query, limit)
+            sample_data = oracle_service.execute_query(query, limit)
             
             # Transform sample data
             transformed_data = self._transform_batch(sample_data['rows'], mapping_config)
@@ -293,3 +332,40 @@ class MigrationService:
         except Exception as e:
             logger.error(f"Error previewing migration: {str(e)}")
             raise
+
+    def schedule_incremental_job(self, mapping_config_id, interval_minutes):
+        """Schedule recurring incremental migration"""
+        def run_job():
+            with self.app.app_context():
+                mapping = MappingConfiguration.query.get(mapping_config_id)
+                if not mapping:
+                    return
+                job = MigrationJob(
+                    mapping_configuration_id=mapping_config_id,
+                    status='pending',
+                    is_incremental=True,
+                )
+                db.session.add(job)
+                db.session.commit()
+                self.start_migration(job.id)
+
+            # Schedule next run
+            timer = threading.Timer(interval_minutes * 60, run_job)
+            timer.daemon = True
+            self.scheduled_jobs[mapping_config_id] = timer
+            timer.start()
+
+        # Cancel existing schedule if any
+        self.cancel_scheduled_job(mapping_config_id)
+
+        # Start initial run immediately
+        timer = threading.Timer(0, run_job)
+        timer.daemon = True
+        self.scheduled_jobs[mapping_config_id] = timer
+        timer.start()
+
+    def cancel_scheduled_job(self, mapping_config_id):
+        """Cancel scheduled incremental job"""
+        timer = self.scheduled_jobs.pop(mapping_config_id, None)
+        if timer:
+            timer.cancel()

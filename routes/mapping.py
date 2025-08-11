@@ -12,12 +12,15 @@ def get_configurations():
     """Get all mapping configurations"""
     try:
         configs = MappingConfiguration.query.filter_by(is_active=True).all()
-        return jsonify([{
+        return jsonify([{ 
             'id': config.id,
             'name': config.name,
             'oracle_connection': config.oracle_connection.name,
             'elasticsearch_connection': config.elasticsearch_connection.name,
             'elasticsearch_index': config.elasticsearch_index,
+            'incremental_column': config.incremental_column,
+            'last_sync_time': config.last_sync_time.isoformat() if config.last_sync_time else None,
+            'schedule_interval': config.schedule_interval,
             'created_at': config.created_at.isoformat(),
             'updated_at': config.updated_at.isoformat()
         } for config in configs])
@@ -35,7 +38,9 @@ def create_configuration():
             oracle_connection_id=data['oracle_connection_id'],
             elasticsearch_connection_id=data['elasticsearch_connection_id'],
             oracle_query=data['oracle_query'],
-            elasticsearch_index=data['elasticsearch_index']
+            elasticsearch_index=data['elasticsearch_index'],
+            incremental_column=data.get('incremental_column'),
+            schedule_interval=data.get('schedule_interval')
         )
         config.set_field_mappings(data.get('field_mappings', []))
         config.set_transformation_rules(data.get('transformation_rules', []))
@@ -61,6 +66,9 @@ def get_configuration(config_id):
             'elasticsearch_connection_id': config.elasticsearch_connection_id,
             'oracle_query': config.oracle_query,
             'elasticsearch_index': config.elasticsearch_index,
+            'incremental_column': config.incremental_column,
+            'last_sync_time': config.last_sync_time.isoformat() if config.last_sync_time else None,
+            'schedule_interval': config.schedule_interval,
             'field_mappings': config.get_field_mappings(),
             'transformation_rules': config.get_transformation_rules(),
             'created_at': config.created_at.isoformat(),
@@ -80,7 +88,11 @@ def update_configuration(config_id):
         config.name = data.get('name', config.name)
         config.oracle_query = data.get('oracle_query', config.oracle_query)
         config.elasticsearch_index = data.get('elasticsearch_index', config.elasticsearch_index)
-        
+        if 'incremental_column' in data:
+            config.incremental_column = data['incremental_column']
+        if 'schedule_interval' in data:
+            config.schedule_interval = data['schedule_interval']
+
         if 'field_mappings' in data:
             config.set_field_mappings(data['field_mappings'])
         if 'transformation_rules' in data:
@@ -112,6 +124,31 @@ def auto_suggest_mapping():
         return jsonify(suggestions)
     except Exception as e:
         logger.error(f"Error generating auto mapping: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@mapping_bp.route('/field-analysis', methods=['POST'])
+def field_analysis():
+    """Analyze Oracle query fields and suggest Elasticsearch mappings"""
+    try:
+        data = request.json
+        oracle_connection_id = data['oracle_connection_id']
+        elasticsearch_connection_id = data['elasticsearch_connection_id']
+        oracle_query = data['oracle_query']
+        elasticsearch_index = data['elasticsearch_index']
+
+        oracle_conn = OracleConnection.query.get_or_404(oracle_connection_id)
+        es_conn = ElasticsearchConnection.query.get_or_404(elasticsearch_connection_id)
+
+        mapping_service = MappingService(oracle_conn, es_conn)
+        analysis = mapping_service.generate_auto_mapping(oracle_query, elasticsearch_index)
+
+        return jsonify({
+            'suggested_mappings': analysis['suggested_mappings'],
+            'transformation_rules': analysis['transformation_rules']
+        })
+    except Exception as e:
+        logger.error(f"Error analyzing fields: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @mapping_bp.route('/validate', methods=['POST'])

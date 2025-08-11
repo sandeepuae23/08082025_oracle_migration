@@ -25,9 +25,9 @@ class MappingService:
             
             # Generate mapping suggestions
             suggestions = self._generate_mapping_suggestions(oracle_columns, es_fields)
-            
+
             # Generate Elasticsearch mapping
-            es_mapping = self._generate_elasticsearch_mapping(oracle_columns)
+            es_mapping = self._generate_elasticsearch_mapping(oracle_columns, oracle_analysis)
             
             # Generate transformation rules
             transformation_rules = self._generate_transformation_rules(oracle_columns)
@@ -37,7 +37,8 @@ class MappingService:
                 'suggested_mappings': suggestions,
                 'elasticsearch_mapping': es_mapping,
                 'transformation_rules': transformation_rules,
-                'join_information': oracle_analysis.get('joins', [])
+                'join_information': oracle_analysis.get('joins', []),
+                'tables_involved': oracle_analysis.get('tables', [])
             }
         except Exception as e:
             logger.error(f"Error generating auto mapping: {str(e)}")
@@ -172,7 +173,7 @@ class MappingService:
         oracle_type_clean = oracle_type.split('(')[0]  # Remove size specifications
         return es_type in compatible_mappings.get(oracle_type_clean, [])
     
-    def _generate_elasticsearch_mapping(self, oracle_columns):
+    def _generate_elasticsearch_mapping(self, oracle_columns, analysis=None):
         """Generate Elasticsearch mapping from Oracle columns"""
         properties = {}
         
@@ -194,6 +195,16 @@ class MappingService:
                 elif es_type == 'text':
                     properties[field_name]['analyzer'] = 'standard'
         
+        # Add parent-child join field if multiple tables involved
+        if analysis and analysis.get('tables') and len(analysis['tables']) > 1:
+            parent = analysis['tables'][0]
+            children = analysis['tables'][1:]
+            relations = {parent: children if len(children) > 1 else children[0]}
+            properties['join_field'] = {
+                'type': 'join',
+                'relations': relations
+            }
+
         return {
             'mappings': {
                 'properties': properties
