@@ -55,3 +55,17 @@ with app.app_context():
             conn.exec_driver_sql(
                 'ALTER TABLE migration_jobs ADD COLUMN is_incremental BOOLEAN DEFAULT 0'
             )
+
+    # Ensure incremental sync columns exist on mapping_configurations
+    cols = [c['name'] for c in inspector.get_columns('mapping_configurations')]
+    if 'incremental_column' not in cols:
+        with db.engine.begin() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE mapping_configurations ADD COLUMN incremental_column VARCHAR(100)'
+            )
+    if 'last_sync_time' not in cols:
+        with db.engine.begin() as conn:
+            conn.exec_driver_sql(
+                'ALTER TABLE mapping_configurations ADD COLUMN last_sync_time DATETIME'
+            )
+

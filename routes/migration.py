@@ -27,9 +27,6 @@ def get_jobs():
             'created_at': job.created_at.isoformat(),
             'is_incremental': job.is_incremental
 
-            'is_incremental': job.is_incremental,
-            'created_at': job.created_at.isoformat()
-
         } for job in jobs])
     except Exception as e:
         logger.error(f"Error fetching migration jobs: {str(e)}")
@@ -89,8 +86,7 @@ def get_job(job_id):
             'created_at': job.created_at.isoformat(),
             'is_incremental': job.is_incremental
 
-            'is_incremental': job.is_incremental,
-            'created_at': job.created_at.isoformat()
+
 
         })
     except Exception as e:
@@ -166,6 +162,7 @@ def clear_completed_jobs():
         logger.error(f"Error clearing completed jobs: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
 
 
 
