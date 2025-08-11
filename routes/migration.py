@@ -23,6 +23,7 @@ def get_jobs():
             'start_time': job.start_time.isoformat() if job.start_time else None,
             'end_time': job.end_time.isoformat() if job.end_time else None,
             'error_message': job.error_message,
+            'is_incremental': job.is_incremental,
             'created_at': job.created_at.isoformat()
         } for job in jobs])
     except Exception as e:
@@ -41,7 +42,8 @@ def create_job():
         # Create new migration job
         job = MigrationJob(
             mapping_configuration_id=mapping_config_id,
-            status='pending'
+            status='pending',
+            is_incremental=data.get('incremental', bool(mapping_config.incremental_column))
         )
         db.session.add(job)
         db.session.commit()
@@ -73,6 +75,7 @@ def get_job(job_id):
             'start_time': job.start_time.isoformat() if job.start_time else None,
             'end_time': job.end_time.isoformat() if job.end_time else None,
             'error_message': job.error_message,
+            'is_incremental': job.is_incremental,
             'created_at': job.created_at.isoformat()
         })
     except Exception as e:

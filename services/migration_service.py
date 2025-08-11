@@ -42,9 +42,12 @@ class MigrationService:
                 if not job:
                     logger.error(f"Migration job {job_id} not found")
                     return
-                
+
                 mapping_config = job.mapping_configuration
-                
+                oracle_query = mapping_config.oracle_query
+                if job.is_incremental:
+                    oracle_query = self._apply_incremental_filter(oracle_query, mapping_config)
+
                 # Update job status
                 job.status = 'running'
                 job.start_time = datetime.utcnow()
@@ -58,7 +61,7 @@ class MigrationService:
 
                 # Create batches if they don't exist
                 if not job.batches:
-                    total_records = self._get_total_record_count(oracle_service, mapping_config.oracle_query)
+                    total_records = self._get_total_record_count(oracle_service, oracle_query)
                     job.total_records = total_records
                     db.session.commit()
 
@@ -95,7 +98,7 @@ class MigrationService:
                     try:
                         batch_data = self._fetch_batch_data(
                             oracle_service,
-                            mapping_config.oracle_query,
+                            oracle_query,
                             batch.offset,
                             batch.limit,
                         )
@@ -153,6 +156,9 @@ class MigrationService:
                     )
                 else:
                     job.status = 'completed'
+                    if job.is_incremental:
+                        mapping_config.last_sync_time = datetime.utcnow()
+                        db.session.commit()
 
                 job.end_time = datetime.utcnow()
                 db.session.commit()
@@ -160,7 +166,7 @@ class MigrationService:
                 logger.info(
                     f"Migration job {job_id} completed. Processed: {processed}, Failed: {failed}"
                 )
-                
+
         except Exception as e:
             logger.error(f"Migration job {job_id} failed: {str(e)}")
             with self.app.app_context():
@@ -177,7 +183,21 @@ class MigrationService:
                 del self.running_jobs[job_id]
             if job_id in self.stop_flags:
                 del self.stop_flags[job_id]
-    
+
+    def _apply_incremental_filter(self, query, mapping_config):
+        """Apply incremental sync filter to query if configured"""
+        if not mapping_config.incremental_column or not mapping_config.last_sync_time:
+            return query
+
+        timestamp = mapping_config.last_sync_time.strftime("%Y-%m-%d %H:%M:%S")
+        condition = (
+            f"{mapping_config.incremental_column} > "
+            f"TO_TIMESTAMP('{timestamp}', 'YYYY-MM-DD HH24:MI:SS')"
+        )
+        if 'where' in query.lower():
+            return f"{query} AND {condition}"
+        return f"{query} WHERE {condition}"
+
     def _get_total_record_count(self, oracle_service, query):
         """Get total number of records that will be migrated"""
         try:
@@ -276,9 +296,14 @@ class MigrationService:
         try:
             # Initialize services
             oracle_service = OracleService(mapping_config.oracle_connection)
-            
+
+            # Apply incremental filter if needed
+            query = mapping_config.oracle_query
+            if mapping_config.incremental_column and mapping_config.last_sync_time:
+                query = self._apply_incremental_filter(query, mapping_config)
+
             # Get sample data
-            sample_data = oracle_service.execute_query(mapping_config.oracle_query, limit)
+            sample_data = oracle_service.execute_query(query, limit)
             
             # Transform sample data
             transformed_data = self._transform_batch(sample_data['rows'], mapping_config)
