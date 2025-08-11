@@ -18,6 +18,8 @@ def get_configurations():
             'oracle_connection': config.oracle_connection.name,
             'elasticsearch_connection': config.elasticsearch_connection.name,
             'elasticsearch_index': config.elasticsearch_index,
+            'incremental_column': config.incremental_column,
+            'last_sync_time': config.last_sync_time.isoformat() if config.last_sync_time else None,
             'created_at': config.created_at.isoformat(),
             'updated_at': config.updated_at.isoformat()
         } for config in configs])
@@ -35,7 +37,8 @@ def create_configuration():
             oracle_connection_id=data['oracle_connection_id'],
             elasticsearch_connection_id=data['elasticsearch_connection_id'],
             oracle_query=data['oracle_query'],
-            elasticsearch_index=data['elasticsearch_index']
+            elasticsearch_index=data['elasticsearch_index'],
+            incremental_column=data.get('incremental_column')
         )
         config.set_field_mappings(data.get('field_mappings', []))
         config.set_transformation_rules(data.get('transformation_rules', []))
@@ -61,6 +64,8 @@ def get_configuration(config_id):
             'elasticsearch_connection_id': config.elasticsearch_connection_id,
             'oracle_query': config.oracle_query,
             'elasticsearch_index': config.elasticsearch_index,
+            'incremental_column': config.incremental_column,
+            'last_sync_time': config.last_sync_time.isoformat() if config.last_sync_time else None,
             'field_mappings': config.get_field_mappings(),
             'transformation_rules': config.get_transformation_rules(),
             'created_at': config.created_at.isoformat(),
@@ -80,7 +85,9 @@ def update_configuration(config_id):
         config.name = data.get('name', config.name)
         config.oracle_query = data.get('oracle_query', config.oracle_query)
         config.elasticsearch_index = data.get('elasticsearch_index', config.elasticsearch_index)
-        
+        if 'incremental_column' in data:
+            config.incremental_column = data['incremental_column']
+
         if 'field_mappings' in data:
             config.set_field_mappings(data['field_mappings'])
         if 'transformation_rules' in data:
