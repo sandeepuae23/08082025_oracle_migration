@@ -44,3 +44,9 @@ def mapping_interface():
 def migration_status():
     """Migration status and job monitoring interface"""
     return render_template('migration_status.html')
+
+
+@main_bp.route('/demo')
+def demo():
+    """Interactive demo showcasing migration features"""
+    return render_template('demo.html')

@@ -161,8 +161,7 @@ async function analyzeOracleQuery() {
         
         oracleFields = response.data.columns;
         renderOracleFields();
-        renderQueryAnalysis(response.data);
-
+        
         // Show success message
         showNotification('Query analyzed successfully!', 'success');
     } catch (error) {
@@ -200,11 +199,10 @@ async function generateAutoMapping() {
         }));
         
         currentMapping.transformation_rules = suggestions.transformation_rules;
-
+        
         // Update UI
         renderActiveMappings();
         renderTransformationRules();
-        renderFieldAnalysis(currentMapping.field_mappings, currentMapping.transformation_rules);
         
         showNotification('Auto-mapping generated successfully!', 'success');
     } catch (error) {
@@ -416,56 +414,6 @@ function renderTransformationRules() {
     });
     html += '</div>';
     
-    container.innerHTML = html;
-}
-
-// Render query analysis details
-function renderQueryAnalysis(analysis) {
-    const container = document.getElementById('query-analysis');
-    if (!container) return;
-
-    const summary = {
-        tables_involved: analysis.tables || [],
-        joins: analysis.joins || [],
-        has_aggregates: analysis.has_aggregates || false,
-        has_case_statements: analysis.has_case_statements || false,
-        has_functions: analysis.has_functions || false,
-        complexity_score: analysis.complexity_score
-    };
-
-    container.innerHTML = `<pre>${JSON.stringify(summary, null, 2)}</pre>`;
-}
-
-// Render field analysis table
-function renderFieldAnalysis(mappings, rules) {
-    const container = document.getElementById('field-analysis');
-    if (!container) return;
-
-    if (!mappings || mappings.length === 0) {
-        container.innerHTML = '<div class="text-muted text-center p-4">No analysis available</div>';
-        return;
-    }
-
-    const ruleMap = {};
-    (rules || []).forEach(r => {
-        ruleMap[r.target] = r.rule;
-    });
-
-    let html = '<div class="table-responsive"><table class="table table-striped">';
-    html += '<thead><tr><th>Oracle Field</th><th>Oracle Type</th><th>ES Field</th><th>ES Type</th><th>Confidence</th><th>Rule</th></tr></thead><tbody>';
-
-    mappings.forEach(m => {
-        html += `<tr>
-            <td><code>${m.oracle_field}</code></td>
-            <td><span class="badge bg-primary">${m.oracle_type}</span></td>
-            <td>${m.es_field || ''}</td>
-            <td><span class="badge bg-info">${m.es_type}</span></td>
-            <td>${m.confidence}%</td>
-            <td>${ruleMap[m.oracle_field] || ''}</td>
-        </tr>`;
-    });
-
-    html += '</tbody></table></div>';
     container.innerHTML = html;
 }
 

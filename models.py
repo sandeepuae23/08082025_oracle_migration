@@ -40,9 +40,6 @@ class MappingConfiguration(db.Model):
     elasticsearch_index = db.Column(db.String(255), nullable=False)
     field_mappings = db.Column(db.Text, nullable=False)  # JSON string
     transformation_rules = db.Column(db.Text)  # JSON string
-    incremental_column = db.Column(db.String(255))  # Column used for incremental sync
-    last_sync_time = db.Column(db.DateTime)  # Timestamp of last successful sync
-    schedule_interval = db.Column(db.Integer)  # Minutes between incremental syncs
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
@@ -82,7 +79,6 @@ class MigrationJob(db.Model):
     end_time = db.Column(db.DateTime)
     error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    is_incremental = db.Column(db.Boolean, default=False)  # Indicates incremental run
     
     # Relationships
     mapping_configuration = db.relationship('MappingConfiguration', backref='migration_jobs')
