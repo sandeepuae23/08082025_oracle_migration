@@ -80,11 +80,26 @@ class MigrationJob(db.Model):
     error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationship
+    # Relationships
     mapping_configuration = db.relationship('MappingConfiguration', backref='migration_jobs')
+    batches = db.relationship('MigrationBatch', backref='job', cascade='all, delete-orphan')
     
     @property
     def progress_percentage(self):
         if self.total_records > 0:
             return (self.processed_records / self.total_records) * 100
         return 0
+
+
+class MigrationBatch(db.Model):
+    __tablename__ = 'migration_batches'
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey('migration_jobs.id'), nullable=False)
+    offset = db.Column(db.Integer, nullable=False)
+    limit = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(50), nullable=False, default='pending')  # pending, completed, failed
+    processed_records = db.Column(db.Integer, default=0)
+    error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

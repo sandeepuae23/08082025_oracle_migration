@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models import MigrationJob, MappingConfiguration
+from models import MigrationJob, MappingConfiguration, MigrationBatch
 from services.migration_service import MigrationService
 from app import db
 import logging
@@ -101,10 +101,10 @@ def retry_job(job_id):
     """Retry a failed migration job"""
     try:
         job = MigrationJob.query.get_or_404(job_id)
-        
+
         if job.status != 'failed':
             return jsonify({'error': 'Job has not failed'}), 400
-        
+
         # Reset job status
         job.status = 'pending'
         job.processed_records = 0
@@ -112,16 +112,45 @@ def retry_job(job_id):
         job.start_time = None
         job.end_time = None
         job.error_message = None
+
+        # Reset non-completed batches
+        for batch in job.batches:
+            if batch.status != 'completed':
+                batch.status = 'pending'
+                batch.processed_records = 0
+                batch.error_message = None
+
         db.session.commit()
-        
+
         # Restart migration
         migration_service = MigrationService(app)
         migration_service.start_migration(job_id)
-        
+
         return jsonify({'message': 'Migration job restarted'})
     except Exception as e:
         logger.error(f"Error retrying migration job: {str(e)}")
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@migration_bp.route('/jobs/<int:job_id>/batches', methods=['GET'])
+def get_job_batches(job_id):
+    """Get batch details for a migration job"""
+    try:
+        job = MigrationJob.query.get_or_404(job_id)
+        return jsonify([
+            {
+                'id': batch.id,
+                'offset': batch.offset,
+                'limit': batch.limit,
+                'status': batch.status,
+                'processed_records': batch.processed_records,
+                'error_message': batch.error_message,
+            }
+            for batch in job.batches
+        ])
+    except Exception as e:
+        logger.error(f"Error fetching job batches: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @migration_bp.route('/preview', methods=['POST'])
