@@ -46,7 +46,3 @@ def migration_status():
     return render_template('migration_status.html')
 
 
-@main_bp.route('/demo')
-def demo():
-    """Interactive demo showcasing migration features"""
-    return render_template('demo.html')
