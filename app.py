@@ -68,3 +68,4 @@ with app.app_context():
             conn.exec_driver_sql(
                 'ALTER TABLE mapping_configurations ADD COLUMN last_sync_time DATETIME'
             )
+
