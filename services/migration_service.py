@@ -62,6 +62,8 @@ class MigrationService:
                 # Create batches if they don't exist
                 if not job.batches:
 
+
+                    total_records = self._get_total_record_count(oracle_service, oracle_query)
                     total_records = self._get_total_record_count(oracle_service, mapping_config.oracle_query)
 
 
@@ -101,8 +103,6 @@ class MigrationService:
                         db.session.commit()
                         logger.info(f"Migration job {job_id} stopped by user")
                         return
-
-
 
                     try:
                         batch_data = self._fetch_batch_data(
@@ -184,13 +184,9 @@ class MigrationService:
                     )
                 else:
                     job.status = 'completed'
-
-
                     if job.is_incremental:
                         mapping_config.last_sync_time = datetime.utcnow()
                         db.session.commit()
-
-
 
                 job.end_time = datetime.utcnow()
                 db.session.commit()
