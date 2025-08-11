@@ -64,7 +64,10 @@ class MigrationService:
 
 
                     total_records = self._get_total_record_count(oracle_service, oracle_query)
-                    total_records = self._get_total_record_count(oracle_service, mapping_config.oracle_query)
+
+
+
+
 
 
 
@@ -104,6 +107,10 @@ class MigrationService:
                         logger.info(f"Migration job {job_id} stopped by user")
                         return
 
+
+
+
+
                     try:
                         batch_data = self._fetch_batch_data(
                             oracle_service,
@@ -139,6 +146,7 @@ class MigrationService:
                     transformed_data = self._transform_batch(batch_data, mapping_config)
 
                     try:
+
 
                         result = es_service.bulk_index(
                             mapping_config.elasticsearch_index, transformed_data
