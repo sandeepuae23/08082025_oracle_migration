@@ -427,28 +427,19 @@ async function stopAllJobs() {
     }
 }
 
-// Clear completed jobs
+// Clear completed jobs (this would need backend implementation)
 function clearCompletedJobs() {
     const completedJobs = migrationJobs.filter(job => job.status === 'completed');
-
+    
     if (completedJobs.length === 0) {
         alert('No completed jobs to clear');
         return;
     }
-
-    if (!confirm(`Are you sure you want to clear ${completedJobs.length} completed jobs from the list?`)) {
-        return;
+    
+    if (confirm(`Are you sure you want to clear ${completedJobs.length} completed jobs from the list?`)) {
+        // This would require backend implementation
+        alert('Feature not yet implemented');
     }
-
-    axios.delete('/api/migration/jobs/completed')
-        .then(() => {
-            loadJobs();
-            showNotification(`${completedJobs.length} completed job(s) cleared`, 'success');
-        })
-        .catch(error => {
-            console.error('Error clearing completed jobs:', error);
-            alert('Error clearing completed jobs');
-        });
 }
 
 // Show start job modal

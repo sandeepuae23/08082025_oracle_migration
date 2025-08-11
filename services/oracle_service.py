@@ -1,8 +1,7 @@
 import oracledb
 import logging
 import sqlparse
-import re
-from sqlparse.sql import IdentifierList, Identifier, Function
+from sqlparse.sql import IdentifierList, Identifier
 from sqlparse.tokens import Keyword, DML
 
 logger = logging.getLogger(__name__)
@@ -104,33 +103,37 @@ class OracleService:
             raise
     
     def analyze_query(self, query):
-        """Analyze SQL query and extract column and structure information"""
+        """Analyze SQL query and extract column information"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-
+            
             # Use DESCRIBE to get column information without executing the full query
             describe_query = f"SELECT * FROM ({query}) WHERE ROWNUM = 0"
             cursor.execute(describe_query)
-
+            
             columns = []
             for desc in cursor.description:
                 column_name = desc[0]
                 oracle_type = self._get_oracle_type_name(desc[1])
-
+                
                 columns.append({
                     'field': column_name.lower(),
                     'oracle_type': oracle_type,
                     'elasticsearch_type': self._map_oracle_to_es_type(oracle_type),
                     'source': self._extract_source_from_query(query, column_name)
                 })
-
+            
             cursor.close()
-
-            # Additional analysis of the query structure
-            analysis = self._analyze_query_structure(query)
-            analysis.update({'columns': columns, 'query_type': 'SELECT'})
-            return analysis
+            
+            # Parse query for additional information
+            joins = self._extract_joins_from_query(query)
+            
+            return {
+                'columns': columns,
+                'joins': joins,
+                'query_type': 'SELECT'
+            }
         except Exception as e:
             logger.error(f"Error analyzing query: {str(e)}")
             raise
@@ -223,56 +226,6 @@ class OracleService:
             oracledb.DB_TYPE_BINARY_DOUBLE: 'BINARY_DOUBLE'
         }
         return type_codes.get(type_code, 'UNKNOWN')
-
-    def _analyze_query_structure(self, query):
-        """Analyze query structure for joins, tables, and complexity"""
-        query_upper = query.upper()
-
-        tables = []
-        joins = []
-
-        # Extract table names from FROM and JOIN clauses
-        table_pattern = re.compile(r'FROM\s+([\w\.\"\$]+)', re.IGNORECASE)
-        match = table_pattern.search(query)
-        if match:
-            tables.append(match.group(1).strip('"'))
-
-        join_pattern = re.compile(r'(INNER|LEFT|RIGHT|FULL|CROSS)?\s+JOIN\s+([\w\.\"\$]+)', re.IGNORECASE)
-        for join in join_pattern.finditer(query):
-            join_type = (join.group(1) or 'INNER').upper()
-            table = join.group(2).strip('"')
-            joins.append({'type': join_type, 'table': table})
-            tables.append(table)
-
-        has_case = 'CASE' in query_upper
-        has_aggregates = any(keyword in query_upper for keyword in ['GROUP BY', 'SUM(', 'COUNT(', 'AVG(', 'MIN(', 'MAX('])
-
-        has_functions = False
-        parsed = sqlparse.parse(query)
-        if parsed:
-            for token in parsed[0].tokens:
-                if isinstance(token, Function):
-                    has_functions = True
-                    break
-
-        complexity_score = 10 + len(tables) * 10 + len(joins) * 10
-        if has_aggregates:
-            complexity_score += 10
-        if has_case:
-            complexity_score += 5
-        if has_functions:
-            complexity_score += 5
-        complexity_score = min(complexity_score, 100)
-
-        return {
-            'joins': joins,
-            'tables': list(dict.fromkeys(tables)),
-            'has_aggregates': has_aggregates,
-            'has_case_statements': has_case,
-            'has_functions': has_functions,
-            'complexity_score': complexity_score,
-            'estimated_rows': None
-        }
     
     def _extract_source_from_query(self, query, column_name):
         """Extract source table and column from query"""
@@ -284,6 +237,21 @@ class OracleService:
             return f"query.{column_name}"
         except:
             return f"query.{column_name}"
+    
+    def _extract_joins_from_query(self, query):
+        """Extract JOIN information from query"""
+        joins = []
+        try:
+            # Simple regex-based extraction for demonstration
+            # In production, use a proper SQL parser
+            query_upper = query.upper()
+            if 'JOIN' in query_upper:
+                # This is a simplified extraction
+                # Would need more sophisticated parsing for production
+                joins.append({'type': 'INNER', 'condition': 'Detected in query'})
+        except:
+            pass
+        return joins
     
     def close_connection(self):
         """Close Oracle connection"""
