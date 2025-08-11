@@ -136,6 +136,22 @@ def retry_job(job_id):
         return jsonify({'error': str(e)}), 500
 
 
+@migration_bp.route('/jobs/completed', methods=['DELETE'])
+def clear_completed_jobs():
+    """Delete all completed migration jobs"""
+    try:
+        completed_jobs = MigrationJob.query.filter_by(status='completed').all()
+        count = len(completed_jobs)
+        for job in completed_jobs:
+            db.session.delete(job)
+        db.session.commit()
+        return jsonify({'deleted': count})
+    except Exception as e:
+        logger.error(f"Error clearing completed jobs: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @migration_bp.route('/jobs/<int:job_id>/batches', methods=['GET'])
 def get_job_batches(job_id):
     """Get batch details for a migration job"""
